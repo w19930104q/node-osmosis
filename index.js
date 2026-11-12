@@ -170,7 +170,7 @@ Osmosis.prototype.run = function () {
  * @private
  */
 
-Osmosis.prototype.request = function (url, opts, callback, tries) {
+Osmosis.prototype.request = function (url, opts, callback, tries, navigation) {
     var self = this,
         href   = url.href,
         method = url.method,
@@ -179,7 +179,7 @@ Osmosis.prototype.request = function (url, opts, callback, tries) {
     this.requests++;
     this.queue.requests++;
     this.queue.push();
-    
+
     if (typeof opts.user_agent === 'function') {
         opts.user_agent = opts.user_agent();
     }
@@ -208,7 +208,10 @@ Osmosis.prototype.request = function (url, opts, callback, tries) {
                 }
 
                 if (err !== null && ++tries < opts.tries) {
-                    self.queueRequest(url, opts, callback, tries);
+                    // Re-queue the originating request: url/opts are
+                    // never mutated by redirects, so every attempt
+                    // stays bound to the page that started it.
+                    self.queueRequest(url, opts, callback, tries, navigation);
 
                     if (self.opts.log === true) {
                         self.command.error(err + ', retrying ' +
@@ -222,7 +225,8 @@ Osmosis.prototype.request = function (url, opts, callback, tries) {
 
                 self.dequeueRequest();
                 self.queue.pop();
-            })
+            },
+            navigation)
             .on('redirect', function (new_url) {
                 if (self.opts.log === true) {
                     self.command.log('[redirect] ' +
@@ -239,21 +243,23 @@ Osmosis.prototype.request = function (url, opts, callback, tries) {
  * @param {object} params - HTTP GET/POST Data
  * @param {object} opts - HTTP request options
  * @param {function} callback - Function to call when done
+ * @param {Navigation} [navigation] - Isolated context of this request
  * @private
  */
 
 Osmosis.prototype.queueRequest = function (url,
                                            opts,
                                            callback,
-                                           tries) {
+                                           tries,
+                                           navigation) {
     if (tries === undefined) {
         tries = 0;
     }
 
     if (this.queue.requests < this.opts.concurrency) {
-        this.request(url, opts, callback, tries);
+        this.request(url, opts, callback, tries, navigation);
     } else {
-        this.queue.enqueue([url, opts, callback, tries]);
+        this.queue.enqueue([url, opts, callback, tries, navigation]);
     }
 };
 
@@ -266,7 +272,7 @@ Osmosis.prototype.dequeueRequest = function () {
 
     arr = this.queue.dequeue();
 
-    this.request(arr[0], arr[1], arr[2], arr[3]);
+    this.request(arr[0], arr[1], arr[2], arr[3], arr[4]);
 };
 
 /**
